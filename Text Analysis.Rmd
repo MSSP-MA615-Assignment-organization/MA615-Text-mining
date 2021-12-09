@@ -1,0 +1,311 @@
+---
+title: "MA615 Assignment4 Text Analysis"
+author: "Kosuke Sasaki"
+date: "2021/12/7"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.pos = 'h')
+Sys.setenv("LANGUAGE" = "EN")
+Sys.setlocale("LC_ALL", "C")
+library(gutenbergr)
+library(dplyr)
+library(tidytext)
+library(scales)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(tnum)
+library(knitr)
+library(kableExtra)
+library(magrittr)
+library(tidyverse)
+library(textdata)
+library(sentimentr)
+library(ndjson)
+```
+
+
+# I. Bag of Words Analysis
+## Sentiment analysis based on AFINN, BIN, and NRC scale
+I have chosen "The Jungle Book" as my book from the gutenberg ebooks. 
+Then I
+The three different lexicons for calculating sentiment give results that are different in an absolute sense but have similar relative trajectories through the novel. We see similar dips and peaks in sentiment at about the same places in the novel, but the absolute values are significantly different. The AFINN lexicon gives the largest absolute values, with high positive values. The lexicon from Bing et al. has lower absolute values and seems to label larger blocks of contiguous positive or negative text. The NRC results are shifted higher relative to the other two, labeling the text more positively, but detects similar relative changes in the text. We find similar differences between the methods when looking at other novels; the NRC sentiment is high, the AFINN sentiment has more variance, the Bing et al. sentiment appears to find longer stretches of similar text, but all three agree roughly on the overall trends in the sentiment through a narrative arc.
+
+Both lexicons have more negative than positive words, but the ratio of negative to positive words is higher in the Bing lexicon than the NRC lexicon. This will contribute to the effect we see in the plot above, as will any systematic difference in word matches, e.g. if the negative words in the NRC lexicon do not match the words that Jane Austen uses very well. Whatever the source of these differences, we see similar relative trajectories across the narrative arc, with similar changes in slope, but marked differences in absolute sentiment from lexicon to lexicon. This is all important context to keep in mind when choosing a sentiment lexicon for analysis.
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE,fig.show='hide', results='hide'}
+# download "jungle book" from gutenberg and store it as data.frame
+junglebook<- gutenberg_download(236)
+
+# separate each line into words and make the tidy data frame
+tidyjungle <- junglebook %>%
+  mutate(linenumber = row_number()) %>%
+  unnest_tokens(word, text)
+
+# make data frame for sentiment analysis on "afinn" scale 
+afinn <- tidyjungle %>% 
+  inner_join(get_sentiments("afinn")) %>% #add sentiment attribute to each word in "tidyjungle"
+  # make 80 lines as a chunk
+  group_by(index = linenumber %/% 80) %>% 
+  #sums up sentiment values for each chunk
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN") 
+    
+# make data frame for sentiment analysis on "bing" scale as with "afinn" scale
+bing <- tidyjungle %>%
+  inner_join(get_sentiments("bing")) %>% 
+  count(index = linenumber %/% 80, sentiment) %>% 
+  # change data frame from long to wide format
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  # calculate sentiment score
+  mutate(sentiment = positive - negative)%>% 
+  mutate(method = "BING")
+
+# make data frame for sentiment analysis on "nrc" scale as with "bing" scale
+nrc <- tidyjungle %>%
+  inner_join(get_sentiments("nrc"))%>%
+  count(index = linenumber %/% 80, sentiment)%>% 
+  filter(sentiment %in% c("positive", "negative"))%>%
+ pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+  mutate(sentiment = positive - negative) %>% 
+  mutate(method = "NRC")
+
+# bind all the above data and visualize sentiment score for each chunk by sentiment scale
+bind_rows(afinn, bing, nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+## Words count based on each sentiment scale
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+# create dataframe including counts of sentiment words on "bing" scale
+bing_word_counts <- tidyjungle %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE)
+# plot  sentiment word counts based on bing scale 
+bing_word_counts %>%
+  group_by(sentiment) %>% #group poitive and negative words
+  slice_max(n, n = 10) %>% #extract top 10 words for each sentiment
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% # sort rows based on the word counts
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment (BING)",
+       y = NULL)
+
+# create dataframe including counts of sentiment words on "afinn" scale
+afinn_word_counts <- tidyjungle %>%
+  inner_join(get_sentiments("afinn")) %>%
+  #categorize words into positive and negative based on sentiment value 
+  mutate(sentiment=ifelse(value>0,"positive","negative")) %>% 
+  count(word, sentiment, sort = TRUE)
+# plot  sentiment word counts based on afinn scale 
+afinn_word_counts %>%
+  group_by(sentiment) %>% #group poitive and negative words
+  slice_max(n, n = 10) %>% #extract top 10 words for each sentiment
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% # sort rows based on the word counts
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment (AFINN)",
+       y = NULL)
+
+# create dataframe including counts of sentiment words on "nrc" scale
+nrc_word_counts <- tidyjungle %>%
+  inner_join(get_sentiments("nrc")) %>%
+  #pick up only positive and negative words 
+  filter(sentiment %in% c("positive", "negative")) %>% 
+  count(word, sentiment, sort = TRUE)
+# plot  sentiment word counts based on afinn scale 
+nrc_word_counts %>%
+  group_by(sentiment) %>% #group poitive and negative words
+  slice_max(n, n = 10) %>% #extract top 10 words for each sentiment
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% # sort rows based on the word counts
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment (NRC)",
+       y = NULL)
+```
+
+
+## Additional lexicon analysis
+```{r,echo=FALSE, warning = FALSE}
+#Download the lexicon of nrc_eil and store it as a data frame
+nrceil <- lexicon_nrc_eil() %>% rename(word=term)
+#assign positive sign to "joy" and negative sign to "anger", "fear" and "sadness"
+nrceil <- nrceil %>% 
+  mutate(value=ifelse(nrceil$AffectDimension=="joy",
+                      nrceil$score,-1*nrceil$score), sentiment=ifelse(nrceil$AffectDimension=="joy","positive","negative")) %>% 
+  select(word, value, sentiment)
+
+# make data frame for sentiment analysis on "nrc_eil" scale 
+nrc_eil <- tidyjungle %>% 
+  inner_join(nrceil) %>% #add sentiment attribute to each word in "tidyjungle"
+  # make 80 lines as a chunk
+  group_by(index = linenumber %/% 80) %>% 
+  #sums up sentiment values for each chunk
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "NRC_EIL") 
+
+#visualize sentiment score for each chunk by nrc_eil scale
+nrc_eil %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+# create dataframe including counts of sentiment words on "nrceil" scale
+nrceil_word_counts <- tidyjungle %>%
+  inner_join(nrceil) %>%
+  count(word, sentiment, sort = TRUE)
+# plot  sentiment word counts based on bing scale 
+nrceil_word_counts %>%
+  group_by(sentiment) %>% #group poitive and negative words
+  slice_max(n, n = 10) %>% #extract top 10 words for each sentiment
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% # sort rows based on the word counts
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment (NRC_EIL)",
+       y = NULL)
+```
+
+##Comparison of visualization of lexicons and plotline
+
+# II. Paragraph-level of Analysis
+```{r,echo=FALSE, warning = FALSE}
+# access the truenumber space of "test2" 
+tnum.authorize("mssp1.bu.edu")
+tnum.setSpace("test2")
+
+# # Convert the text columns into a text file and enclose headings with <>
+# write_lines(junglebook$text, "junglebooktext")
+# # Read in the text as a list
+# junglebook_txt <- readLines("junglebooktext")
+# 
+# # Source function to upload the text to truenumber space
+# source("Book2TN-v6A-1.R")
+# # Upload the text to the space
+# tnBooksFromLines(junglebook_txt, "Kipling4/junglebook4")
+
+# # Add tags"Mogli" and "Shere Khan" to the truenumber 
+# tnum.tagByQuery("Kipling4/junglebook4# has *=REGEXP(\" Mowgli\")",
+#                adds=("Mowgli"))
+# tnum.tagByQuery("Kipling4/junglebook4# has *=REGEXP(\" Shere Khan\")",
+#                adds=("Shere Khan"))
+
+# Extract all the text of the book excluding heading as a list
+wt <- tnum.query("Kipling4/junglebook4/section:# has text", max=3000)
+#Turn the list into a data frame
+dft<- tnum.objectsToDf(wt)
+# Extract the location of each sentence as a list and change it as a data frame
+wo <- tnum.query("Kipling4/junglebook4/section:# has ordinal", max=3000)
+dfo <- tnum.objectsToDf(wo)
+# Extract word counts of each sentence as a list and change it as a data frame
+wc <- tnum.query("Kipling4/junglebook4/section:# has count:#", max=3000)
+dfc <- tnum.objectsToDf(wc) %>% rename(wordcounts=numeric.value)
+
+# Make the data frame of all the text, location,and wordcounts without heading
+text_locations <- left_join(select(dft, subject, string.value, tags), 
+                               select(dfo, subject, numeric.value)) %>%
+                  left_join(select(dfc, subject, wordcounts))
+
+# Separate the subject column into "section", "paragraph" and "sentence"
+tnumtext <- text_locations %>% 
+  separate(col = subject, sep = "/para", into = c("section", "para")) %>%
+  separate(col = section, sep = ":", into = c("out","section")) %>%
+  separate(col = para, sep = "/", into = c("pars","sent"))%>%
+  separate(col = pars, sep = ":", into = c("out1","paragraph"))%>%
+  separate(col = sent, sep = ":", into = c("out2","sentence"))%>%
+  rename(ordinal = numeric.value) %>% select(!c(out,out1,out2))
+#To do paragraph analysis, assign serial paragraph number
+tnumtext <- tnumtext %>% unite(col = "secpara", section, paragraph, remove= FALSE)
+paran <- nrow(distinct(tnumtext, secpara))
+a <- data.frame(secpara=distinct(tnumtext, secpara),
+                serialpara=c(1:paran))
+tnumtext <- left_join(tnumtext,a, by="secpara") %>% select(!"secpara")
+#remove tentative data set
+rm(a)
+
+
+#create tentative data frame
+sentimentvalue <- data.frame(NULL)
+#Calculate sentiment value for each paragraph
+for (i in 1:paran) {
+paratext <- tnumtext %>% filter(serialpara == i) %>% 
+  pull(string.value) %>% str_replace_all("\"","") %>%
+  str_flatten(collapse = " ")
+parasentence <- get_sentences(paratext)
+a <- sentiment_by(parasentence)
+sentimentvalue <- rbind(sentimentvalue, a)
+}
+#Add paragraph column to "sentimentvalue" data frame
+sentimentvalue <- sentimentvalue %>% 
+  mutate(paragraph=c(1:paran), method="SENTIMENTR") %>%
+  rename(sentiment=ave_sentiment) %>%
+  select(paragraph,sentiment,method)
+#remove tentative data set in the for loop
+rm(a,papratext,parasentence)
+
+# plot the sentiment values calculated by "sentimentr" through paragraphs
+sentimentvalue %>% 
+ ggplot(aes(paragraph, sentiment)) +
+  geom_col(show.legend = FALSE)
+
+```
+
+## comparison between sentimentr and lexicons as Paragraph-level Analysis
+```{r,echo=FALSE, warning = FALSE}
+# separate each line into words and make the tidy data frame of tnum
+tidytnumtext <- tnumtext %>%
+  unnest_tokens(word, string.value)
+
+# make data frame for sentiment analysis on "afinn" scale 
+afinn2 <- tidytnumtext %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(paragraph=serialpara) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN") 
+    
+# make data frame for sentiment analysis on "bing" scale as with "afinn" scale
+bing2 <- tidytnumtext %>%
+  inner_join(get_sentiments("bing")) %>% 
+  count(paragraph=serialpara, sentiment) %>% 
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative)%>% 
+  mutate(method = "BING")
+
+# make data frame for sentiment analysis on "nrc" scale as with "bing" scale
+nrc2 <- tidytnumtext %>%
+  inner_join(get_sentiments("nrc"))%>%
+  count(paragraph=serialpara, sentiment)%>% 
+  filter(sentiment %in% c("positive", "negative"))%>%
+ pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+  mutate(sentiment = positive - negative) %>% 
+  mutate(method = "NRC")
+
+# plot the sentiment values based on lexicons and sentimentr through paragraphs
+bind_rows(sentimentvalue, afinn2, bing2, nrc2) %>%
+  ggplot(aes(paragraph, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+
+
+# III. Character Analysis
+```{r,echo=FALSE, warning = FALSE}
+# Already add tags to truenumber in the section II with the below codes
+# and downloaded it as tnumtext
+# tnum.tagByQuery("Kipling4/junglebook4# has *=REGEXP(\" Mowgli\")",
+#                adds=("Mowgli"))
+# tnum.tagByQuery("Kipling4/junglebook4# has *=REGEXP(\" Shere Khan\")",
+#                adds=("Shere Khan"))
+
+```

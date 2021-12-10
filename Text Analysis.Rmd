@@ -3,6 +3,7 @@ title: "MA615 Assignment4 Text Analysis"
 author: "Kosuke Sasaki"
 date: "2021/12/7"
 output: pdf_document
+csl: nature.csl
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, fig.pos = 'h')
@@ -23,18 +24,18 @@ library(tidyverse)
 library(textdata)
 library(sentimentr)
 library(ndjson)
+library(gridExtra)
 ```
 
 
 # I. Bag of Words Analysis
 ## Sentiment analysis based on AFINN, BIN, and NRC scale
 I have chosen "The Jungle Book" as my book from the gutenberg ebooks. 
-Then I
-The three different lexicons for calculating sentiment give results that are different in an absolute sense but have similar relative trajectories through the novel. We see similar dips and peaks in sentiment at about the same places in the novel, but the absolute values are significantly different. The AFINN lexicon gives the largest absolute values, with high positive values. The lexicon from Bing et al. has lower absolute values and seems to label larger blocks of contiguous positive or negative text. The NRC results are shifted higher relative to the other two, labeling the text more positively, but detects similar relative changes in the text. We find similar differences between the methods when looking at other novels; the NRC sentiment is high, the AFINN sentiment has more variance, the Bing et al. sentiment appears to find longer stretches of similar text, but all three agree roughly on the overall trends in the sentiment through a narrative arc.
+Then, three different lexicons, "Afinn", "Bing", and "Nrc" are used to calculate sentiment of the books.
+I counted up how many positive and negative words there are in defined sections of each book. I define an index to keep track of the book, and this index counts up sections of 80 lines of text. An estimate of the net sentiment (positive - negative) in each chunk of the book for each sentiment lexicon are shown in the Figure 1.
 
-Both lexicons have more negative than positive words, but the ratio of negative to positive words is higher in the Bing lexicon than the NRC lexicon. This will contribute to the effect we see in the plot above, as will any systematic difference in word matches, e.g. if the negative words in the NRC lexicon do not match the words that Jane Austen uses very well. Whatever the source of these differences, we see similar relative trajectories across the narrative arc, with similar changes in slope, but marked differences in absolute sentiment from lexicon to lexicon. This is all important context to keep in mind when choosing a sentiment lexicon for analysis.
 
-```{r,message=FALSE,warning=FALSE,echo=FALSE,fig.show='hide', results='hide'}
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
 # download "jungle book" from gutenberg and store it as data.frame
 junglebook<- gutenberg_download(236)
 
@@ -72,30 +73,18 @@ nrc <- tidyjungle %>%
   mutate(method = "NRC")
 
 # bind all the above data and visualize sentiment score for each chunk by sentiment scale
-bind_rows(afinn, bing, nrc) %>%
-  ggplot(aes(index, sentiment, fill = method)) +
+bind <- bind_rows(afinn, bing, nrc) 
+  grid.arrange(ggplot(bind,aes(index, sentiment, fill = method)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~method, ncol = 1, scales = "free_y")
+  ,bottom="Fig.1 Comparison of three sentiment lexicons")
 ```
+The three different lexicons seem to produce results with some similar trajectories; we have more negative values than positive values throughout the book. Still, we have also some differences between them. The AFINN lexicon gives the largest absolute values, with high negative values. The Bing lexicon has very few positive values. The NRC lexicon seems to label the text more positively relative to the other two. 
+These differences between the methods are seen when looking at other books; the NRC sentiment is high, the AFINN sentiment has more variance, the Bing et al. sentiment appears to find longer stretches of similar text.[1]
 
-## Words count based on each sentiment scale
+## Words count based on each sentiment scale  
+Then I compare the word counts which contribute to sentiment.  
 ```{r,message=FALSE,warning=FALSE,echo=FALSE}
-# create dataframe including counts of sentiment words on "bing" scale
-bing_word_counts <- tidyjungle %>%
-  inner_join(get_sentiments("bing")) %>%
-  count(word, sentiment, sort = TRUE)
-# plot  sentiment word counts based on bing scale 
-bing_word_counts %>%
-  group_by(sentiment) %>% #group poitive and negative words
-  slice_max(n, n = 10) %>% #extract top 10 words for each sentiment
-  ungroup() %>%
-  mutate(word = reorder(word, n)) %>% # sort rows based on the word counts
-  ggplot(aes(n, word, fill = sentiment)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~sentiment, scales = "free_y") +
-  labs(x = "Contribution to sentiment (BING)",
-       y = NULL)
-
 # create dataframe including counts of sentiment words on "afinn" scale
 afinn_word_counts <- tidyjungle %>%
   inner_join(get_sentiments("afinn")) %>%
@@ -111,7 +100,23 @@ afinn_word_counts %>%
   ggplot(aes(n, word, fill = sentiment)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~sentiment, scales = "free_y") +
-  labs(x = "Contribution to sentiment (AFINN)",
+  labs(x = "Fig.2-1 Contribution to sentiment (AFINN)",
+       y = NULL)
+
+# create dataframe including counts of sentiment words on "bing" scale
+bing_word_counts <- tidyjungle %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE)
+# plot  sentiment word counts based on bing scale 
+bing_word_counts %>%
+  group_by(sentiment) %>% #group poitive and negative words
+  slice_max(n, n = 10) %>% #extract top 10 words for each sentiment
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% # sort rows based on the word counts
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Fig.2-2 Contribution to sentiment (BING)",
        y = NULL)
 
 # create dataframe including counts of sentiment words on "nrc" scale
@@ -129,13 +134,14 @@ nrc_word_counts %>%
   ggplot(aes(n, word, fill = sentiment)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~sentiment, scales = "free_y") +
-  labs(x = "Contribution to sentiment (NRC)",
+  labs(x = "Fig.2-3 Contribution to sentiment (NRC)",
        y = NULL)
 ```
-
+As we can see from the figure2-1 to figure2-3, there are several words (kill, dead, like, good, so on so forth) common to the lexicons but the ratio of positive and negative words are different. In addition, the most frequent negative word "nag" on NRC scale is a name of a character and could lead to misleading result of sentiment analysis. Based on these results, there is a chance to choose a lexicon which does not match the word choices of this jungle book so that I should carefully choose the appropriate lexicon in order to draw figure 1 trajectory which best describes the outline of the book.  
 
 ## Additional lexicon analysis
-```{r,echo=FALSE, warning = FALSE}
+In addition to the lexicon of Afinn, Bing, and Nrc, I tried to apply nrc_eil lexicon to sentiment analysis as below.
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
 #Download the lexicon of nrc_eil and store it as a data frame
 nrceil <- lexicon_nrc_eil() %>% rename(word=term)
 #assign positive sign to "joy" and negative sign to "anger", "fear" and "sadness"
@@ -154,10 +160,9 @@ nrc_eil <- tidyjungle %>%
   mutate(method = "NRC_EIL") 
 
 #visualize sentiment score for each chunk by nrc_eil scale
-nrc_eil %>%
-  ggplot(aes(index, sentiment, fill = method)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~method, ncol = 1, scales = "free_y")
+  grid.arrange(ggplot(nrc_eil, aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE),
+  bottom="Fig.3-1 NRC_EIL trajectory")
 
 # create dataframe including counts of sentiment words on "nrceil" scale
 nrceil_word_counts <- tidyjungle %>%
@@ -172,14 +177,18 @@ nrceil_word_counts %>%
   ggplot(aes(n, word, fill = sentiment)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~sentiment, scales = "free_y") +
-  labs(x = "Contribution to sentiment (NRC_EIL)",
+  labs(x = "Fig.3-2 Contribution to sentiment (NRC_EIL)",
        y = NULL)
 ```
+As you can see Figure3-1 and 3-2, nrc_eil lexicon shows much more negative words than positive words relative to other lexicons . This is because nrc_eil lexicon categorize words into 4 types, "joy", "anger", "fear", and "sadness", and I assume "joy" is the positive category and the others as negative category, which leads to more negative sentiment values assigned to the book.
 
 ##Comparison of visualization of lexicons and plotline
+The plotline of this book is basically not so happy because the main character "Mowgli" has experienced a lot of hardship, even though he and his friends sometimes experienced success, throughout the story. In that sense, NRC lexicon would not be appropriate because it shows rather a positive trajectory, and it also includes the negative word "nag", which is actually used as a character name in the book. The trajectories of Afinn and Bing lexicon seem to be aligned with the storyline but Bing one shows too many negative sentiment values considering there is still some success. So I would choose Afinn lexicon as the most appropriate one for this book.
 
-# II. Paragraph-level of Analysis
-```{r,echo=FALSE, warning = FALSE}
+# II. Paragraph-level of Analysis  
+In this section, I will do sentiment analysis using "truenumber" and "sentimentr" as below.  
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
 # access the truenumber space of "test2" 
 tnum.authorize("mssp1.bu.edu")
 tnum.setSpace("test2")
@@ -254,14 +263,19 @@ sentimentvalue <- sentimentvalue %>%
 rm(a,papratext,parasentence)
 
 # plot the sentiment values calculated by "sentimentr" through paragraphs
-sentimentvalue %>% 
- ggplot(aes(paragraph, sentiment)) +
-  geom_col(show.legend = FALSE)
-
+grid.arrange(ggplot(sentimentvalue,aes(paragraph, sentiment)) +
+  geom_col(show.legend = FALSE),
+  bottom="Fig.4 Sentimentr trajectory by paragraph")
 ```
+  
+  
+For this analysis, I calculated sentiment value for each paragraph, while I used keep track of the book for each section of 80 lines of text in the "I. Bag of Words Analysis" section. In total, there are 876 paragraphs and the trajectory of sentiment value by sentimentr analysis is shown above as Figure4.  
+  
+  
+## comparison between sentimentr and lexicons as Paragraph-level Analysis  
+I will compare the trajectories between sentimentr and lexicons as paragraph-level analysis. To do that, I re-do the bag of words analysis for each lexicon as below.  
 
-## comparison between sentimentr and lexicons as Paragraph-level Analysis
-```{r,echo=FALSE, warning = FALSE}
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
 # separate each line into words and make the tidy data frame of tnum
 tidytnumtext <- tnumtext %>%
   unnest_tokens(word, string.value)
@@ -291,21 +305,61 @@ nrc2 <- tidytnumtext %>%
   mutate(method = "NRC")
 
 # plot the sentiment values based on lexicons and sentimentr through paragraphs
-bind_rows(sentimentvalue, afinn2, bing2, nrc2) %>%
-  ggplot(aes(paragraph, sentiment, fill = method)) +
+bindrow <- bind_rows(sentimentvalue, afinn2, bing2, nrc2)
+ grid.arrange(ggplot(bindrow, aes(paragraph, sentiment, fill = method)) +
   geom_col(show.legend = FALSE) +
-  facet_wrap(~method, ncol = 1, scales = "free_y")
+  facet_wrap(~method, ncol = 1, scales = "free_y"),
+  bottom="Fig.5 Comparison of lexicons and sentimentr by paragraph")
 ```
+  
+Based on the figure5 above, the trajectory calculated by sentimentr for each graph looks similar to the ones by three lexicons. Even though, when you take a closer look, NRC trajectory shows more positive values relative to the other trajectories, which we could see in the comparison of three lexicons in the first section of this report. Compared to Afinn and Bing trajectories, sentimentr one is small in absolute value but the shape is very similar to those two trajectories, just as in-between.  
+Given these graphs, I could say Afinn, Bing and sentimentr are all appropriate for the sentiment analysis for this book.
 
+# III. Character Analysis  
+Finally, I will calculate sentiment value related to "Mowgli", the main character of this book, and "Shere Khan", Mowgli's opponent.  
 
-
-# III. Character Analysis
-```{r,echo=FALSE, warning = FALSE}
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
 # Already add tags to truenumber in the section II with the below codes
 # and downloaded it as tnumtext
 # tnum.tagByQuery("Kipling4/junglebook4# has *=REGEXP(\" Mowgli\")",
 #                adds=("Mowgli"))
 # tnum.tagByQuery("Kipling4/junglebook4# has *=REGEXP(\" Shere Khan\")",
 #                adds=("Shere Khan"))
+mowgli <- tnumtext %>% filter(tags=="Mowgli")
+shere <- tnumtext %>% filter(tags=="Shere Khan")
 
+#calculate the sentiment value related to "Mowgli" for each sentence
+mowglisenti <- mowgli %>% 
+  pull(string.value) %>% str_replace_all("\"","") %>%
+  str_flatten(collapse = " ") %>% 
+  get_sentences() %>% 
+  sentiment()
+#Plot the sentiment value related "Mowgli" for each sentence
+grid.arrange(ggplot(mowglisenti,aes(sentence_id, sentiment)) +
+  geom_col(show.legend = FALSE),
+  bottom="Fig.6-1 Mowgli sentiment trajectory by paragraph")
+ 
+ 
+#calculate the sentiment value related to "Shere Khan" for each sentence
+sheresenti <- shere %>% 
+  pull(string.value) %>% str_replace_all("\"","") %>%
+  str_flatten(collapse = " ") %>% 
+  get_sentences() %>% 
+  sentiment()
+#Plot the sentiment value related "Shere Khan" for each sentence
+grid.arrange(ggplot(sheresenti,aes(sentence_id, sentiment)) +
+  geom_col(show.legend = FALSE),
+  bottom="Fig.6-2 Shere Khan sentiment trajectory by paragraph")
+
+
+#Calculate average sentiment value related to Mowgli and Shere Khan separately
+mowglisenti %>% sentiment_by()
+sheresenti %>% sentiment_by()
 ```
+  
+As you can see from Figure6-1 and 6-2, the sentences related to Mowgli are much more than the ones related to Shere Khan. It is reasonable because Mowgli is the main character whereas Shere Khan is his opponent and the number of appearance in the story is much less than that of Mowgli. It is also reasonable that trajectory of Shere Khan seems to be slightly more negative than the one of Mowgli, and the average of sentiment value of Shere Khan based on sentimentr is -0.04, which is less than that of Mowgli, -0.02, which you can see in the above tables.  
+In conclusion, sentiment analylsis based on sentimentr function works really well for this book.  
+  
+# Reference
+1. Julia, S. (2021) *Text Mining with R: A Tidy Approach*[online]. O’Reilly: https://www.tidytextmining.com/index.html
+  [accessed 7 December 2021]
